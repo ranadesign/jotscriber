@@ -233,7 +233,7 @@ export default function JotscriberApp() {
     setStatus("transcribing");
     setErrorMsg("");
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/transcribe", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -286,9 +286,9 @@ export default function JotscriberApp() {
 
         setBatchResults(prev => prev.map((r, j) => j === i ? { ...r, image: dataUrl, status: "transcribing" } : r));
 
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
+        const response = await fetch("/api/transcribe", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          headers: { "Content-Type": "application/json",  },
           body: JSON.stringify({
             model,
             max_tokens: 4096,
@@ -343,9 +343,9 @@ export default function JotscriberApp() {
     setOutlineGenerating(true);
     try {
       const combined = notes.map((n, i) => `--- Note ${i + 1} ---\n${n.text}`).join("\n\n");
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        headers: { "Content-Type": "application/json",  },
         body: JSON.stringify({
           model,
           max_tokens: 4096,
@@ -411,9 +411,9 @@ export default function JotscriberApp() {
     const exportId = uid();
     setExportingId(exportId);
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        headers: { "Content-Type": "application/json",  },
         body: JSON.stringify({
           model: "claude-haiku-4-5",
           max_tokens: 1000,
