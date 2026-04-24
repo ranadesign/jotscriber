@@ -258,19 +258,19 @@ export default function JotscriberApp() {
   useEffect(() => { saveStored("plan", plan); }, [plan]);
   useEffect(() => {
     saveStored("usage", { month: monthKey(), count: usageThisMonth });
-    if (user && cloudLoaded) saveToCloud(user.id, "usage", { month: monthKey(), count: usageThisMonth });
+    if (user && cloudLoaded && usageThisMonth > 0) saveToCloud(user.id, "usage", { month: monthKey(), count: usageThisMonth });
   }, [usageThisMonth, user, cloudLoaded]);
   useEffect(() => {
     saveStored("items", savedItems);
-    if (user && cloudLoaded) saveToCloud(user.id, "items", savedItems);
+    if (user && cloudLoaded && savedItems.length > 0) saveToCloud(user.id, "items", savedItems);
   }, [savedItems, user, cloudLoaded]);
   useEffect(() => {
     saveStored("folders", folders);
-    if (user && cloudLoaded) saveToCloud(user.id, "folders", folders);
+    if (user && cloudLoaded && folders.length > 1) saveToCloud(user.id, "folders", folders);
   }, [folders, user, cloudLoaded]);
   useEffect(() => {
     saveStored("outlines", outlines);
-    if (user && cloudLoaded) saveToCloud(user.id, "outlines", outlines);
+    if (user && cloudLoaded && outlines.length > 0) saveToCloud(user.id, "outlines", outlines);
   }, [outlines, user, cloudLoaded]);
 
   // ─── Firebase Google sign in ───
@@ -351,6 +351,8 @@ export default function JotscriberApp() {
   };
 
   const handleSignOut = async () => {
+    // Prevent cloud saves from firing during cleanup
+    setCloudLoaded(false);
     await signOut(auth);
     setUser(null);
     setPlan("free");
@@ -360,7 +362,7 @@ export default function JotscriberApp() {
     setOutlines([]);
     setView("home");
     setGuestUsed(false);
-    // clear all stored data
+    // clear LOCAL stored data only — cloud data stays intact
     try {
       Object.keys(localStorage).filter(k => k.startsWith("jotscriber_")).forEach(k => localStorage.removeItem(k));
     } catch {}
