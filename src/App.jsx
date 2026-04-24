@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+import { getStorage, ref as storageRef, uploadString, getDownloadURL } from "firebase/storage";
 import { getAnalytics } from "firebase/analytics";
 
 /* ───────────────────────── Firebase ───────────────────────── */
@@ -15,6 +17,8 @@ const firebaseConfig = {
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+const storage = getStorage(firebaseApp);
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider('apple.com');
 try { getAnalytics(firebaseApp); } catch (e) { /* analytics may fail in some environments */ }
@@ -141,6 +145,33 @@ export default function JotscriberApp() {
     try { localStorage.setItem("jotscriber_" + key, JSON.stringify(val)); } catch {}
   };
 
+  // ─── Cloud sync helpers ───
+  const saveToCloud = async (userId, key, data) => {
+    try {
+      await setDoc(doc(db, "users", userId, "data", key), { value: JSON.stringify(data) });
+    } catch (e) { console.error("Cloud save failed:", e); }
+  };
+
+  const loadFromCloud = async (userId, key) => {
+    try {
+      const snap = await getDoc(doc(db, "users", userId, "data", key));
+      if (snap.exists()) return JSON.parse(snap.data().value);
+    } catch (e) { console.error("Cloud load failed:", e); }
+    return null;
+  };
+
+  // Upload image to Firebase Storage, return download URL
+  const uploadImageToStorage = async (userId, itemId, dataUrl) => {
+    try {
+      const imageRef = storageRef(storage, `users/${userId}/images/${itemId}`);
+      await uploadString(imageRef, dataUrl, "data_url");
+      return await getDownloadURL(imageRef);
+    } catch (e) {
+      console.error("Image upload failed:", e);
+      return dataUrl; // fall back to data URL if upload fails
+    }
+  };
+
   // ─── Auth state ───
   const [user, setUser] = useState(() => loadStored("user", null));
   const [guestUsed, setGuestUsed] = useState(() => loadStored("guestUsed", false));
@@ -188,6 +219,14 @@ export default function JotscriberApp() {
   const [errorMsg, setErrorMsg] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+
+  // ─── Responsive ───
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 600);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 600);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
   const [contextMenu, setContextMenu] = useState(null); // {x, y}
 
   // ─── Batch processing ───
@@ -211,28 +250,57 @@ export default function JotscriberApp() {
     return Math.max(0, limit - usageThisMonth);
   }, [user, guestUsed, limit, usageThisMonth]);
 
-  // ─── Persist to localStorage ───
+  // ─── Persist to localStorage + Firestore ───
   useEffect(() => { saveStored("user", user); }, [user]);
   useEffect(() => { saveStored("guestUsed", guestUsed); }, [guestUsed]);
   useEffect(() => { saveStored("plan", plan); }, [plan]);
-  useEffect(() => { saveStored("usage", { month: monthKey(), count: usageThisMonth }); }, [usageThisMonth]);
-  useEffect(() => { saveStored("items", savedItems); }, [savedItems]);
-  useEffect(() => { saveStored("folders", folders); }, [folders]);
-  useEffect(() => { saveStored("outlines", outlines); }, [outlines]);
+  useEffect(() => {
+    saveStored("usage", { month: monthKey(), count: usageThisMonth });
+    if (user) saveToCloud(user.id, "usage", { month: monthKey(), count: usageThisMonth });
+  }, [usageThisMonth, user]);
+  useEffect(() => {
+    saveStored("items", savedItems);
+    if (user) saveToCloud(user.id, "items", savedItems);
+  }, [savedItems, user]);
+  useEffect(() => {
+    saveStored("folders", folders);
+    if (user) saveToCloud(user.id, "folders", folders);
+  }, [folders, user]);
+  useEffect(() => {
+    saveStored("outlines", outlines);
+    if (user) saveToCloud(user.id, "outlines", outlines);
+  }, [outlines, user]);
 
   // ─── Firebase Google sign in ───
   const [authLoading, setAuthLoading] = useState(true);
 
   // Listen for auth state changes (handles page refresh, session persistence)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        setUser({
+        const userData = {
           id: firebaseUser.uid,
           name: firebaseUser.displayName || "User",
           email: firebaseUser.email,
           avatar: firebaseUser.photoURL,
-        });
+        };
+        setUser(userData);
+
+        // Load from cloud first, fall back to localStorage
+        const cloudItems = await loadFromCloud(firebaseUser.uid, "items");
+        const cloudFolders = await loadFromCloud(firebaseUser.uid, "folders");
+        const cloudOutlines = await loadFromCloud(firebaseUser.uid, "outlines");
+        const cloudUsage = await loadFromCloud(firebaseUser.uid, "usage");
+
+        const items = cloudItems || loadStored("items", []);
+        const foldersData = cloudFolders || loadStored("folders", [{ id: "unsorted", name: "All Files", system: true }]);
+        const outlinesData = cloudOutlines || loadStored("outlines", []);
+        const usageData = cloudUsage || loadStored("usage", { month: monthKey(), count: 0 });
+
+        setSavedItems(items);
+        setFolders(foldersData);
+        setOutlines(outlinesData);
+        setUsageThisMonth(usageData.month === monthKey() ? usageData.count : 0);
       } else {
         setUser(null);
       }
@@ -611,16 +679,24 @@ export default function JotscriberApp() {
   };
 
   // ─── Save ───
-  const handleSave = (includeImage) => {
+  const handleSave = async (includeImage) => {
     if (!user) {
       setAuthPromptReason("save");
       setShowAuthModal(true);
       return;
     }
+    const itemId = uid();
+    let imageUrl = null;
+
+    // Upload image to Firebase Storage if saving with image
+    if (includeImage && imagePreview && user) {
+      imageUrl = await uploadImageToStorage(user.id, itemId, imagePreview);
+    }
+
     const item = {
-      id: uid(),
+      id: itemId,
       text: transcribedText,
-      image: includeImage ? imagePreview : null,
+      image: imageUrl,
       folder: activeFolder === "unsorted" ? "unsorted" : activeFolder,
       createdAt: now(),
       title: transcribedText.slice(0, 60).replace(/\n/g, " ") + (transcribedText.length > 60 ? "…" : ""),
@@ -815,13 +891,6 @@ export default function JotscriberApp() {
     const showUploadArea = status === "idle" || status === "error";
     const showLoading = status === "uploading" || status === "transcribing";
     const showResult = status === "done";
-
-    const [isMobile, setIsMobile] = useState(() => window.innerWidth < 600);
-    useEffect(() => {
-      const handler = () => setIsMobile(window.innerWidth < 600);
-      window.addEventListener("resize", handler);
-      return () => window.removeEventListener("resize", handler);
-    }, []);
 
     const UseCaseIcon = ({ type }) => {
       const props = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: C.accent, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
@@ -1876,30 +1945,85 @@ export default function JotscriberApp() {
   );
 
   /* ══════════════════════ HEADER ══════════════════════ */
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const Header = () => (
     <header style={s.header}>
       <div style={s.headerInner}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => { resetTranscription(); setView("home"); }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => { resetTranscription(); setView("home"); setMobileMenuOpen(false); }}>
           <div style={{ ...s.logoMark, width: 36, height: 36, borderRadius: 10 }}>{Icons.pen(18)}</div>
           <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 19, fontWeight: 400, letterSpacing: "-.02em" }}>Jotscriber</span>
           {plan === "pro" && <span style={{ fontSize: 11, fontWeight: 600, color: C.gold, background: C.goldSoft, padding: "2px 8px", borderRadius: 99 }}>PRO</span>}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {user && <UsageBadge />}
-          <button style={{ ...s.navTextBtn, ...(view === "pricing" ? s.navTextBtnActive : {}) }} onClick={() => setView("pricing")}>Upgrade</button>
+
+        {/* Desktop nav */}
+        {!isMobile && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {user && <UsageBadge />}
+            <button style={{ ...s.navTextBtn, ...(view === "pricing" ? s.navTextBtnActive : {}) }} onClick={() => setView("pricing")}>Upgrade</button>
+            {user && (
+              <>
+                <button style={{ ...s.navTextBtn, ...(view === "library" ? s.navTextBtnActive : {}) }} onClick={() => setView("library")}>Library</button>
+                <button style={s.navBtn} onClick={() => setView("settings")} title="Settings">{Icons.settings(17)}</button>
+              </>
+            )}
+            {!user && (
+              <button style={s.signInBtn} onClick={() => { setAuthPromptReason("sign_in"); setShowAuthModal(true); }}>
+                Sign in
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Mobile burger */}
+        {isMobile && (
+          <button style={s.navBtn} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? Icons.x(22) : Icons.menu(22)}
+          </button>
+        )}
+      </div>
+
+      {/* Mobile dropdown menu */}
+      {isMobile && mobileMenuOpen && (
+        <div style={{
+          borderTop: `1px solid ${C.border}`,
+          background: C.card,
+          padding: "8px 20px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+        }}>
           {user && (
-            <>
-              <button style={{ ...s.navTextBtn, ...(view === "library" ? s.navTextBtnActive : {}) }} onClick={() => setView("library")}>Library</button>
-              <button style={s.navBtn} onClick={() => setView("settings")} title="Settings">{Icons.settings(17)}</button>
-            </>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}>
+              {user.avatar ? (
+                <img src={user.avatar} alt="" style={{ width: 32, height: 32, borderRadius: 99 }} referrerPolicy="no-referrer" />
+              ) : (
+                <div style={{ width: 32, height: 32, borderRadius: 99, background: C.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: C.accent, fontSize: 14 }}>
+                  {user.name.charAt(0)}
+                </div>
+              )}
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 500 }}>{user.name}</p>
+                <p style={{ fontSize: 12, color: C.muted }}>{remainingGenerations} generations left</p>
+              </div>
+            </div>
           )}
+          <button style={s.mobileMenuItem} onClick={() => { setView("home"); setMobileMenuOpen(false); }}>Home</button>
+          {user && <button style={s.mobileMenuItem} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>Library</button>}
+          <button style={s.mobileMenuItem} onClick={() => { setView("pricing"); setMobileMenuOpen(false); }}>Upgrade</button>
+          {user && <button style={s.mobileMenuItem} onClick={() => { setView("settings"); setMobileMenuOpen(false); }}>Settings</button>}
           {!user && (
-            <button style={s.signInBtn} onClick={() => { setAuthPromptReason("sign_in"); setShowAuthModal(true); }}>
+            <button style={{ ...s.mobileMenuItem, color: C.accent, fontWeight: 600 }} onClick={() => { setAuthPromptReason("sign_in"); setShowAuthModal(true); setMobileMenuOpen(false); }}>
               Sign in
             </button>
           )}
+          {user && (
+            <button style={{ ...s.mobileMenuItem, color: C.red }} onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}>
+              Sign out
+            </button>
+          )}
         </div>
-      </div>
+      )}
     </header>
   );
 
@@ -1999,6 +2123,7 @@ const s = {
   navTextBtn: { background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: "6px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500 },
   navTextBtnActive: { color: C.accent, background: C.accentSoft },
   signInBtn: { background: C.card, color: C.ink, border: `1px solid ${C.border}`, padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  mobileMenuItem: { display: "block", width: "100%", textAlign: "left", padding: "10px 4px", border: "none", background: "transparent", fontSize: 15, fontWeight: 500, color: C.ink, cursor: "pointer" },
   iconBtn: { background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 6, borderRadius: 6, display: "flex", alignItems: "center" },
 
   /* drop zone */
