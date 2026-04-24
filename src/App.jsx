@@ -1,4 +1,23 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { initializeApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { getAnalytics } from "firebase/analytics";
+
+/* ───────────────────────── Firebase ───────────────────────── */
+const firebaseConfig = {
+  apiKey: "AIzaSyBDWtAjG3QQp5CfYR8MF4B89SoTI541P58",
+  authDomain: "jotscriber.firebaseapp.com",
+  projectId: "jotscriber",
+  storageBucket: "jotscriber.firebasestorage.app",
+  messagingSenderId: "654875193260",
+  appId: "1:654875193260:web:9e22500ea6dbafca165409",
+  measurementId: "G-057KT175QZ"
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const googleProvider = new GoogleAuthProvider();
+const appleProvider = new OAuthProvider('apple.com');
+try { getAnalytics(firebaseApp); } catch (e) { /* analytics may fail in some environments */ }
 
 /* ───────────────────────── fonts ───────────────────────── */
 
@@ -201,20 +220,67 @@ export default function JotscriberApp() {
   useEffect(() => { saveStored("folders", folders); }, [folders]);
   useEffect(() => { saveStored("outlines", outlines); }, [outlines]);
 
-  // ─── Fake Google sign in ───
-  const handleGoogleSignIn = () => {
-    setUser({
-      id: "user_" + uid(),
-      name: "Alex Johnson",
-      email: "alex.johnson@gmail.com",
-      avatar: null,
+  // ─── Firebase Google sign in ───
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Listen for auth state changes (handles page refresh, session persistence)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName || "User",
+          email: firebaseUser.email,
+          avatar: firebaseUser.photoURL,
+        });
+      } else {
+        setUser(null);
+      }
+      setAuthLoading(false);
     });
-    setShowAuthModal(false);
-    setGuestUsed(false);
-    setUsageThisMonth(0);
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+      setUser({
+        id: firebaseUser.uid,
+        name: firebaseUser.displayName || "User",
+        email: firebaseUser.email,
+        avatar: firebaseUser.photoURL,
+      });
+      setShowAuthModal(false);
+      setGuestUsed(false);
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        alert("Sign in failed: " + err.message);
+      }
+    }
   };
 
-  const handleSignOut = () => {
+  const handleAppleSignIn = async () => {
+    try {
+      const result = await signInWithPopup(auth, appleProvider);
+      const firebaseUser = result.user;
+      setUser({
+        id: firebaseUser.uid,
+        name: firebaseUser.displayName || "User",
+        email: firebaseUser.email,
+        avatar: firebaseUser.photoURL,
+      });
+      setShowAuthModal(false);
+      setGuestUsed(false);
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        alert("Sign in failed: " + err.message);
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut(auth);
     setUser(null);
     setPlan("free");
     setUsageThisMonth(0);
@@ -658,6 +724,10 @@ export default function JotscriberApp() {
             <button style={s.googleBtn} onClick={handleGoogleSignIn}>
               {Icons.google(20)}
               <span>Continue with Google</span>
+            </button>
+            <button style={{ ...s.googleBtn, marginTop: 8 }} onClick={handleAppleSignIn}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#000"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+              <span>Continue with Apple</span>
             </button>
             <p style={{ fontSize: 12, color: C.muted, marginTop: 14 }}>
               By signing in you agree to our Terms of Service
@@ -1765,9 +1835,13 @@ export default function JotscriberApp() {
         <div style={{ ...s.settingsSection }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 10, textTransform: "uppercase", letterSpacing: ".05em" }}>Account</p>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 99, background: C.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: C.accent, fontSize: 16 }}>
-              {user.name.charAt(0)}
-            </div>
+            {user.avatar ? (
+              <img src={user.avatar} alt="" style={{ width: 40, height: 40, borderRadius: 99 }} referrerPolicy="no-referrer" />
+            ) : (
+              <div style={{ width: 40, height: 40, borderRadius: 99, background: C.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: C.accent, fontSize: 16 }}>
+                {user.name.charAt(0)}
+              </div>
+            )}
             <div>
               <p style={{ fontSize: 14, fontWeight: 500 }}>{user.name}</p>
               <p style={{ fontSize: 13, color: C.muted }}>{user.email}</p>
