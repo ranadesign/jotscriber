@@ -169,6 +169,7 @@ export default function JotscriberApp() {
   const [errorMsg, setErrorMsg] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null); // {x, y}
 
   // ─── Batch processing ───
   const [batchResults, setBatchResults] = useState([]); // [{id, image, text, status, error}]
@@ -177,7 +178,7 @@ export default function JotscriberApp() {
   const fileInputRef = useRef(null);
 
   // ─── Model based on plan ───
-  const model = plan === "pro" ? "claude-sonnet-4-5" : "claude-haiku-4-5";
+  const model = plan === "pro" ? "claude-haiku-4-5-20251001" : "claude-haiku-4-5-20251001";
 
   // ─── Can user generate? ───
   const canGenerate = useMemo(() => {
@@ -235,11 +236,7 @@ export default function JotscriberApp() {
     try {
       const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model,
           max_tokens: 4096,
@@ -288,7 +285,7 @@ export default function JotscriberApp() {
 
         const response = await fetch("/api/transcribe", {
           method: "POST",
-          headers: { "Content-Type": "application/json",  },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model,
             max_tokens: 4096,
@@ -345,7 +342,7 @@ export default function JotscriberApp() {
       const combined = notes.map((n, i) => `--- Note ${i + 1} ---\n${n.text}`).join("\n\n");
       const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json",  },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model,
           max_tokens: 4096,
@@ -413,9 +410,9 @@ export default function JotscriberApp() {
     try {
       const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json",  },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 1000,
           messages: [{ role: "user", content: `Create a Google Doc titled "${title}" with the following content. Just confirm it was created.\n\n${content}` }],
           mcp_servers: [{ type: "url", url: "https://drivemcp.googleapis.com/mcp/v1", name: "google-drive" }]
@@ -484,6 +481,27 @@ export default function JotscriberApp() {
       }
     }
   }, [handleFile, canGenerate, user]);
+
+  const pasteFromClipboard = async () => {
+    setContextMenu(null);
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find(t => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const file = new File([blob], "pasted-image.png", { type: imageType });
+          handleFile(file);
+          return;
+        }
+      }
+      // No image found — show helpful message
+      alert("No image found in clipboard. Copy an image first, then try again.");
+    } catch {
+      // Fallback: focus the window and let the user Cmd+V manually
+      alert("Right-click paste isn't supported in this browser.\nTry pressing Cmd+V (Mac) or Ctrl+V (Windows) instead.");
+    }
+  };
 
   const homeCopyBtnRef = useRef(null);
 
@@ -762,12 +780,22 @@ export default function JotscriberApp() {
         {showUploadArea && (
           <div style={{ paddingTop: 28 }}>
             <div style={{ textAlign: "left", marginBottom: 20 }}>
-              {/* Trust badge — above the header */}
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 12, padding: "5px 12px", borderRadius: 99, background: C.accentSoft, border: `1px solid ${C.accent}20` }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent} stroke="none"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
-                <span style={{ fontSize: 11, fontWeight: 600, color: C.accent, whiteSpace: "nowrap" }}>2,000+ trusted users</span>
-              </div>
-              {/* Header row — logo absolute on desktop, hidden here on mobile */}
+              {/* Mobile: logo above title */}
+              {isMobile && (
+                <img
+                  src={LOGO_IMAGE}
+                  alt="Jotscriber"
+                  style={{ height: 52, width: "auto", borderRadius: 12, marginBottom: 14 }}
+                />
+              )}
+              {/* Desktop: trust badge above header */}
+              {!isMobile && (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 12, padding: "5px 12px", borderRadius: 99, background: C.accentSoft, border: `1px solid ${C.accent}20` }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent} stroke="none"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.accent, whiteSpace: "nowrap" }}>2,000+ trusted users</span>
+                </div>
+              )}
+              {/* Header row — logo absolute on desktop */}
               <div style={{ position: "relative", marginBottom: 8, paddingRight: isMobile ? 0 : 140 }}>
                 <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, fontWeight: 400, letterSpacing: "-.01em", lineHeight: 1.15 }}>
                   Handwriting, transcribed.
@@ -783,12 +811,12 @@ export default function JotscriberApp() {
               <p style={{ fontSize: 15, color: C.muted, lineHeight: 1.6, maxWidth: 440 }}>
                 Drop a photo of your handwritten notes and turn them into clean, editable, shareable text.
               </p>
+              {/* Mobile: trust badge below description */}
               {isMobile && (
-                <img
-                  src={LOGO_IMAGE}
-                  alt="Jotscriber"
-                  style={{ height: 52, width: "auto", borderRadius: 12, marginTop: 14 }}
-                />
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 14, padding: "5px 12px", borderRadius: 99, background: C.accentSoft, border: `1px solid ${C.accent}20` }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent} stroke="none"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.accent, whiteSpace: "nowrap" }}>2,000+ trusted users</span>
+                </div>
               )}
               {user && (
                 <div style={{ marginTop: 10, display: "flex" }}>
@@ -826,12 +854,15 @@ export default function JotscriberApp() {
                 }
                 fileInputRef.current?.click();
               }}
-              onContextMenu={e => e.preventDefault()}
+              onContextMenu={e => {
+                e.preventDefault();
+                setContextMenu({ x: e.clientX, y: e.clientY });
+              }}
             >
               <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{ display: "none" }} onChange={e => handleFile(e.target.files?.[0])} />
               <div style={{ position: "absolute", top: 14, right: 14, color: C.muted, opacity: 0.4 }}>{Icons.upload(22)}</div>
               <p style={{ fontSize: 15, fontWeight: 500, marginBottom: 3 }}>Drop your handwritten notes here</p>
-              <p style={{ fontSize: 13, color: C.muted }}>or click to browse · <kbd style={{ fontFamily: "inherit", background: C.border, padding: "1px 6px", borderRadius: 4, fontSize: 12 }}>{navigator.platform.includes("Mac") ? "⌘V" : "Ctrl+V"}</kbd> to paste</p>
+              <p style={{ fontSize: 13, color: C.muted }}>or click to browse · paste from clipboard</p>
               <div style={{ display: "flex", gap: 5, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
                 {["PNG", "JPG", "GIF", "WebP"].map(f => <span key={f} style={s.badge}>{f}</span>)}
               </div>
@@ -1821,6 +1852,37 @@ export default function JotscriberApp() {
       <NewFolderModal />
       <ConfirmDeleteModal />
       <OutlineSelectModal />
+      {/* Context menu for right-click paste on drop zone */}
+      {contextMenu && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 300 }}
+          onClick={() => setContextMenu(null)}
+        >
+          <div
+            style={{
+              position: "fixed",
+              top: contextMenu.y,
+              left: contextMenu.x,
+              background: C.card,
+              borderRadius: 10,
+              boxShadow: C.shadowLg,
+              border: `1px solid ${C.border}`,
+              padding: "4px",
+              minWidth: 160,
+              zIndex: 301,
+              animation: "fadeIn .1s ease",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", border: "none", background: "transparent", borderRadius: 7, fontSize: 14, cursor: "pointer", color: C.ink, textAlign: "left" }}
+              onClick={pasteFromClipboard}
+            >
+              {Icons.copy(15)} Paste Image
+            </button>
+          </div>
+        </div>
+      )}
       {renameTarget && (
         <div style={s.modalOverlay} onClick={() => setRenameTarget(null)}>
           <div style={{ ...s.modalCard, maxWidth: 360, animation: "fadeUp .3s ease" }} onClick={e => e.stopPropagation()}>
