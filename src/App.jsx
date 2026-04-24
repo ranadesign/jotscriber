@@ -932,13 +932,6 @@ export default function JotscriberApp() {
                   style={{ height: 52, width: "auto", borderRadius: 12, marginBottom: 14 }}
                 />
               )}
-              {/* Desktop: trust badge above header */}
-              {!isMobile && (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 12, padding: "5px 12px", borderRadius: 99, background: C.accentSoft, border: `1px solid ${C.accent}20` }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent} stroke="none"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: C.accent, whiteSpace: "nowrap" }}>2,000+ trusted users</span>
-                </div>
-              )}
               {/* Header row — logo absolute on desktop */}
               <div style={{ position: "relative", marginBottom: 8, paddingRight: isMobile ? 0 : 140 }}>
                 <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, fontWeight: 400, letterSpacing: "-.01em", lineHeight: 1.15 }}>
@@ -955,13 +948,6 @@ export default function JotscriberApp() {
               <p style={{ fontSize: 15, color: C.muted, lineHeight: 1.6, maxWidth: 440 }}>
                 Drop a photo of your handwritten notes and turn them into clean, editable, shareable text.
               </p>
-              {/* Mobile: trust badge below description */}
-              {isMobile && (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 14, padding: "5px 12px", borderRadius: 99, background: C.accentSoft, border: `1px solid ${C.accent}20` }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent} stroke="none"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: C.accent, whiteSpace: "nowrap" }}>2,000+ trusted users</span>
-                </div>
-              )}
               {user && (
                 <div style={{ marginTop: 10, display: "flex" }}>
                   <UsageBadge />
