@@ -146,6 +146,8 @@ export default function JotscriberApp() {
   };
 
   // ─── Cloud sync helpers ───
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+
   const saveToCloud = async (userId, key, data) => {
     try {
       await setDoc(doc(db, "users", userId, "data", key), { value: JSON.stringify(data) });
@@ -256,20 +258,20 @@ export default function JotscriberApp() {
   useEffect(() => { saveStored("plan", plan); }, [plan]);
   useEffect(() => {
     saveStored("usage", { month: monthKey(), count: usageThisMonth });
-    if (user) saveToCloud(user.id, "usage", { month: monthKey(), count: usageThisMonth });
-  }, [usageThisMonth, user]);
+    if (user && cloudLoaded) saveToCloud(user.id, "usage", { month: monthKey(), count: usageThisMonth });
+  }, [usageThisMonth, user, cloudLoaded]);
   useEffect(() => {
     saveStored("items", savedItems);
-    if (user) saveToCloud(user.id, "items", savedItems);
-  }, [savedItems, user]);
+    if (user && cloudLoaded) saveToCloud(user.id, "items", savedItems);
+  }, [savedItems, user, cloudLoaded]);
   useEffect(() => {
     saveStored("folders", folders);
-    if (user) saveToCloud(user.id, "folders", folders);
-  }, [folders, user]);
+    if (user && cloudLoaded) saveToCloud(user.id, "folders", folders);
+  }, [folders, user, cloudLoaded]);
   useEffect(() => {
     saveStored("outlines", outlines);
-    if (user) saveToCloud(user.id, "outlines", outlines);
-  }, [outlines, user]);
+    if (user && cloudLoaded) saveToCloud(user.id, "outlines", outlines);
+  }, [outlines, user, cloudLoaded]);
 
   // ─── Firebase Google sign in ───
   const [authLoading, setAuthLoading] = useState(true);
@@ -301,6 +303,7 @@ export default function JotscriberApp() {
         setFolders(foldersData);
         setOutlines(outlinesData);
         setUsageThisMonth(usageData.month === monthKey() ? usageData.count : 0);
+        setCloudLoaded(true);
       } else {
         setUser(null);
       }
