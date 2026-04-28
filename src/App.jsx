@@ -388,7 +388,7 @@ export default function JotscriberApp() {
             role: "user",
             content: [
               { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
-              { type: "text", text: `You are an expert handwriting transcription assistant. Carefully examine this image of handwritten notes and transcribe ALL text you can see into clean, readable text.\n\nRules:\n- Transcribe everything exactly as written — preserve the author's words, spelling, and meaning\n- Use proper paragraph breaks where the handwriting shows them\n- If you see lists, preserve the list structure\n- If words are unclear, make your best guess and put [unclear] next to very ambiguous words\n- Do NOT add any commentary, headers, or extra text — output ONLY the transcription\n- If the image doesn't contain handwriting, briefly say what you see instead` }
+              { type: "text", text: `You are an expert handwriting transcription assistant. Carefully examine this image of handwritten notes and transcribe ALL text you can see into clean, readable text.\n\nRules:\n- Transcribe everything exactly as written — preserve the author's words, spelling, and meaning\n- Detect and transcribe in whatever language the handwriting is written in\n- Use proper paragraph breaks where the handwriting shows them\n- Preserve lists, bullet points, and numbered lists using the same structure (e.g. -, •, 1. 2. 3.)\n- Preserve arrows and connectors where they appear (→, ←, ↑, ↓)\n- Preserve headings and underlined text using markdown (e.g. # Heading or **bold**)\n- Preserve indentation and hierarchical structure where visible\n- If words are unclear, make your best guess and put [unclear] next to very ambiguous words\n- Do NOT add any commentary, headers, or extra text — output ONLY the transcription\n- If the image doesn't contain handwriting, briefly say what you see instead` }
             ]
           }]
         })
@@ -437,7 +437,7 @@ export default function JotscriberApp() {
               role: "user",
               content: [
                 { type: "image", source: { type: "base64", media_type: item.file.type, data: b64 } },
-                { type: "text", text: `You are an expert handwriting transcription assistant. Carefully examine this image of handwritten notes and transcribe ALL text you can see into clean, readable text.\n\nRules:\n- Transcribe everything exactly as written — preserve the author's words, spelling, and meaning\n- Use proper paragraph breaks where the handwriting shows them\n- If you see lists, preserve the list structure\n- If words are unclear, make your best guess and put [unclear] next to very ambiguous words\n- Do NOT add any commentary, headers, or extra text — output ONLY the transcription\n- If the image doesn't contain handwriting, briefly say what you see instead` }
+                { type: "text", text: `You are an expert handwriting transcription assistant. Carefully examine this image of handwritten notes and transcribe ALL text you can see into clean, readable text.\n\nRules:\n- Transcribe everything exactly as written — preserve the author's words, spelling, and meaning\n- Detect and transcribe in whatever language the handwriting is written in\n- Use proper paragraph breaks where the handwriting shows them\n- Preserve lists, bullet points, and numbered lists using the same structure (e.g. -, •, 1. 2. 3.)\n- Preserve arrows and connectors where they appear (→, ←, ↑, ↓)\n- Preserve headings and underlined text using markdown (e.g. # Heading or **bold**)\n- Preserve indentation and hierarchical structure where visible\n- If words are unclear, make your best guess and put [unclear] next to very ambiguous words\n- Do NOT add any commentary, headers, or extra text — output ONLY the transcription\n- If the image doesn't contain handwriting, briefly say what you see instead` }
               ]
             }]
           })
@@ -1105,7 +1105,7 @@ export default function JotscriberApp() {
                   <div style={{ marginTop: 20, textAlign: "center", padding: "10px 0", borderRadius: 8, background: C.greenSoft, color: C.green, fontSize: 13, fontWeight: 600 }}>Current plan</div>
                 </div>
                 <div style={{ background: C.card, border: "1.5px solid " + C.gold, borderRadius: 16, padding: "28px 24px", position: "relative", display: "flex", flexDirection: "column" }}>
-                  <div style={{ position: "absolute", top: -10, right: 16, background: C.gold, color: "#fff", fontSize: 11, fontWeight: 600, padding: "3px 12px", borderRadius: 99 }}>Popular</div>
+                  <div style={{ position: "absolute", top: -10, right: 16, background: C.gold, color: "#fff", fontSize: 11, fontWeight: 600, padding: "3px 12px", borderRadius: 99 }}>Best Value</div>
                   <p style={{ fontSize: 12, fontWeight: 600, color: C.gold, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 16 }}>Pro</p>
                   <div style={{ marginBottom: 20 }}><span style={{ fontSize: 36, fontWeight: 700, color: C.ink }}>$4.99</span><span style={{ fontSize: 14, color: C.muted, marginLeft: 4 }}>/mo</span></div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13, color: C.muted, flex: 1 }}>
@@ -1128,7 +1128,7 @@ export default function JotscriberApp() {
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {[
-                  { q: "How is my data handled? Is it private?", a: "Your privacy is a priority. Images are sent to the AI for transcription only and are never stored on our servers. Transcriptions are saved securely in your account and are only accessible by you. We don't use your notes or images to train AI models, and we don't share your data with third parties." },
+                  { q: "How is my data handled? Is it private?", a: "Your privacy is a priority. Images uploaded for transcription are processed by the AI and not retained unless you choose to save them to your library. Saved notes and images are stored securely in your account via Firebase and are only accessible by you. We don't use your notes or images to train AI models, and we don't share your data with third parties." },
                   { q: "Do unused generations roll over?", a: "No. Your generation count resets on the 1st of each month. Unused generations don't carry over to the next month." },
                   { q: "What's the difference between Free and Pro accuracy?", a: "Pro uses an enhanced AI model that's significantly better at reading messy, cursive, or faded handwriting. Free uses a standard model that works well for clean, legible notes." },
                   { q: "How does Batch Upload work?", a: "Pro users can select multiple images at once and transcribe them all in one go. Each image is processed sequentially, and you can review and edit all transcriptions before saving to your library." },
@@ -1847,7 +1847,7 @@ export default function JotscriberApp() {
         </div>
         {/* Pro */}
         <div style={{ ...s.planCard, borderColor: C.gold, position: "relative", display: "flex", flexDirection: "column" }}>
-          <div style={{ position: "absolute", top: -10, right: 12, background: C.gold, color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99 }}>Popular</div>
+          <div style={{ position: "absolute", top: -10, right: 12, background: C.gold, color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99 }}>Best Value</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
             {Icons.crown(16)}
             <p style={{ fontSize: 13, fontWeight: 600, color: C.gold, textTransform: "uppercase", letterSpacing: ".04em" }}>Pro</p>
