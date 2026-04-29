@@ -3,7 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { getStorage, ref as storageRef, uploadString, getDownloadURL } from "firebase/storage";
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, logEvent } from "firebase/analytics";
 
 /* ───────────────────────── Firebase ───────────────────────── */
 const firebaseConfig = {
@@ -21,7 +21,8 @@ const db = getFirestore(firebaseApp);
 const storage = getStorage(firebaseApp);
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider('apple.com');
-try { getAnalytics(firebaseApp); } catch (e) { /* analytics may fail in some environments */ }
+let analytics = null;
+try { analytics = getAnalytics(firebaseApp); } catch (e) { /* analytics may fail in some environments */ }
 
 /* ───────────────────────── fonts ───────────────────────── */
 
@@ -128,6 +129,7 @@ const GLOBAL_CSS = `
   @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
   @keyframes scanMove { 0% { top: 0; } 100% { top: 100%; } }
   @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px; }
@@ -420,8 +422,13 @@ export default function JotscriberApp() {
       setTranscribedText(text);
       setStatus("done");
       // track usage
-      if (!user) setGuestUsed(true);
-      else setUsageThisMonth(p => p + 1);
+      if (!user) {
+        setGuestUsed(true);
+        if (analytics) logEvent(analytics, "guest_transcription");
+      } else {
+        setUsageThisMonth(p => p + 1);
+        if (analytics) logEvent(analytics, "signed_in_transcription");
+      }
     } catch (err) {
       setErrorMsg(err.message || "Transcription failed");
       setStatus("error");
@@ -1524,20 +1531,27 @@ export default function JotscriberApp() {
 
     {/* ── Action Items Side Panel ── */}
     {showActionPanel && (
-      <div style={{
-        position: isMobile ? "fixed" : "fixed",
-        top: isMobile ? 0 : 56,
-        right: 0,
-        bottom: 0,
-        width: isMobile ? "100%" : 320,
-        background: C.card,
-        borderLeft: `1px solid ${C.border}`,
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 200,
-        animation: "slideIn .25s ease",
-        boxShadow: "-4px 0 24px rgba(0,0,0,.06)",
-      }}>
+      <>
+        {isMobile && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 199, animation: "fadeIn .2s ease" }} onClick={() => setShowActionPanel(false)} />}
+        <div style={{
+          position: "fixed",
+          top: isMobile ? "auto" : 64,
+          bottom: 0,
+          right: 0,
+          left: isMobile ? 0 : "auto",
+          height: isMobile ? "75vh" : "auto",
+          width: isMobile ? "100%" : 320,
+          background: C.card,
+          borderLeft: isMobile ? "none" : `1px solid ${C.border}`,
+          borderTop: isMobile ? `1px solid ${C.border}` : "none",
+          borderRadius: isMobile ? "16px 16px 0 0" : 0,
+          display: "flex",
+          flexDirection: "column",
+          zIndex: 200,
+          animation: isMobile ? "slideUp .3s ease" : "slideIn .25s ease",
+          boxShadow: isMobile ? "0 -4px 24px rgba(0,0,0,.1)" : "-4px 0 24px rgba(0,0,0,.06)",
+        }}>
+          {isMobile && <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "10px auto 0", flexShrink: 0 }} />}
         {/* Panel header */}
         <div style={{ padding: "16px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
@@ -1685,6 +1699,7 @@ export default function JotscriberApp() {
           </div>
         )}
       </div>
+      </>
     )}
     </div>
     );
@@ -1840,20 +1855,27 @@ export default function JotscriberApp() {
 
         {/* ── Right Sidebar Tasks Panel ── */}
         {showItemTaskPanel && (
-          <div style={{
-            position: "fixed",
-            top: 56,
-            right: 0,
-            bottom: 0,
-            width: isMobile ? "100%" : 300,
-            background: C.card,
-            borderLeft: `1px solid ${C.border}`,
-            display: "flex",
-            flexDirection: "column",
-            zIndex: 200,
-            animation: "slideIn .25s ease",
-            boxShadow: "-4px 0 24px rgba(0,0,0,.06)",
-          }}>
+          <>
+            {isMobile && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 199, animation: "fadeIn .2s ease" }} onClick={() => setShowItemTaskPanel(false)} />}
+            <div style={{
+              position: "fixed",
+              top: isMobile ? "auto" : 64,
+              bottom: 0,
+              right: 0,
+              left: isMobile ? 0 : "auto",
+              height: isMobile ? "75vh" : "auto",
+              width: isMobile ? "100%" : 300,
+              background: C.card,
+              borderLeft: isMobile ? "none" : `1px solid ${C.border}`,
+              borderTop: isMobile ? `1px solid ${C.border}` : "none",
+              borderRadius: isMobile ? "16px 16px 0 0" : 0,
+              display: "flex",
+              flexDirection: "column",
+              zIndex: 200,
+              animation: isMobile ? "slideUp .3s ease" : "slideIn .25s ease",
+              boxShadow: isMobile ? "0 -4px 24px rgba(0,0,0,.1)" : "-4px 0 24px rgba(0,0,0,.06)",
+            }}>
+              {isMobile && <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "10px auto 0", flexShrink: 0 }} />}
             {/* Panel header */}
             <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>Tasks</p>
@@ -1904,18 +1926,32 @@ export default function JotscriberApp() {
             {/* Manual add */}
             <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0, display: "flex", gap: 6 }}>
               <input
+                id="item-sidebar-new-task"
                 placeholder="Add a task…"
-                value={newTaskText}
-                onChange={e => setNewTaskText(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") addManualTask(viewingItem.id, viewingItem.title); }}
+                defaultValue=""
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    const val = e.target.value.trim();
+                    if (!val) return;
+                    setActionItems(prev => [{ id: uid(), text: val, noteId: viewingItem.id, noteTitle: viewingItem.title, checked: false, createdAt: now() }, ...prev]);
+                    e.target.value = "";
+                  }
+                }}
                 style={{ flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontFamily: "'Inter', sans-serif", color: C.ink, outline: "none" }}
               />
               <button
-                style={{ ...s.btnSmall, background: newTaskText.trim() ? C.accent : C.border, color: newTaskText.trim() ? "#fff" : C.muted, fontSize: 12 }}
-                onClick={() => addManualTask(viewingItem.id, viewingItem.title)}
+                style={{ ...s.btnSmall, background: C.accent, color: "#fff", border: "none", fontSize: 12 }}
+                onClick={() => {
+                  const input = document.getElementById("item-sidebar-new-task");
+                  const val = input?.value.trim();
+                  if (!val) return;
+                  setActionItems(prev => [{ id: uid(), text: val, noteId: viewingItem.id, noteTitle: viewingItem.title, checked: false, createdAt: now() }, ...prev]);
+                  input.value = "";
+                }}
               >Add</button>
             </div>
           </div>
+          </>
         )}
       </div>
     );
