@@ -1751,97 +1751,123 @@ export default function JotscriberApp() {
   const ItemPage = () => {
     if (!viewingItem) return null;
 
+    const noteTaskItems = actionItems.filter(a => a.noteId === viewingItem.id);
+    const hasTasks = noteTaskItems.length > 0;
+
+    // Auto-show panel if note has tasks
+    useEffect(() => {
+      if (hasTasks) setShowItemTaskPanel(true);
+    }, [viewingItem.id]);
+
     return (
-      <div style={{ maxWidth: 640, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 }}>
-          <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setShowItemTaskPanel(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
-          <button
-            style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12, background: showItemTaskPanel ? C.accent : C.card, color: showItemTaskPanel ? "#fff" : C.ink, border: `1px solid ${showItemTaskPanel ? C.accent : C.border}` }}
-            onClick={() => {
-              setShowItemTaskPanel(!showItemTaskPanel);
-              setActionPanelNoteId(viewingItem.id);
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            Tasks {actionItems.filter(a => a.noteId === viewingItem.id && !a.checked).length > 0 && `(${actionItems.filter(a => a.noteId === viewingItem.id && !a.checked).length})`}
-          </button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewingItem.title}</h2>
-          <button style={s.actionBtn} onClick={() => startRename("note", viewingItem.id, viewingItem.title)}>
-            {Icons.pen(13)} <span>Rename</span>
-          </button>
-        </div>
-        <div style={{ marginTop: 16 }}>
-          {viewingItem.image && (
-            <div style={{ marginBottom: 16 }}>
-              <img src={viewingItem.image} alt="Original" style={{ maxWidth: "100%", maxHeight: 280, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.border}` }} />
-            </div>
-          )}
-          <div style={s.resultCard}>
-            <div style={s.resultHeader}>
-              <h2 style={{ fontSize: 15, fontWeight: 600 }}>Transcription</h2>
-              <div style={{ display: "flex", gap: 4 }}>
-                {itemIsEditing ? (
-                  <>
-                    <button style={{ ...s.actionBtn, ...s.actionBtnActive }} onClick={saveItemEdits}>
-                      {Icons.check(14)} <span>Done</span>
-                    </button>
-                    <button style={s.actionBtn} onClick={cancelItemEdit}>
-                      {Icons.x(14)} <span>Cancel</span>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button style={s.actionBtn} onClick={startItemEdit}>
-                      {Icons.pen(14)} <span>Edit</span>
-                    </button>
-                    <button ref={itemCopyBtnRef} style={s.actionBtn} onClick={handleItemCopy}>
-                      {Icons.copy(14)} <span>Copy</span>
-                    </button>
-                    <button style={s.actionBtn} onClick={() => { if (navigator.share) navigator.share({ text: itemDisplayText }); }}>
-                      {Icons.share(14)} <span>Share</span>
-                    </button>
-                    <button
-                      style={{ ...s.actionBtn, ...(plan !== "pro" ? { color: C.gold, borderColor: `${C.gold}40` } : {}) }}
-                      onClick={() => {
-                        const text = itemIsEditing && itemTextareaRef.current ? itemTextareaRef.current.value : itemDisplayText;
-                        exportToDrive(viewingItem.title, text);
-                      }}
-                    >
-                      {Icons.drive(14)} <span>{exportingId ? "Exporting…" : "Drive"}</span>
-                      {plan !== "pro" && <span style={{ fontSize: 9, fontWeight: 700, color: C.gold }}>PRO</span>}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            {/* Textarea is always in the DOM — hidden when not editing so it never remounts */}
-            <textarea
-              ref={itemTextareaRef}
-              style={{ ...s.textarea, display: itemIsEditing ? "block" : "none" }}
-              defaultValue=""
-              spellCheck
-            />
-            {!itemIsEditing && (
-              <div style={s.textOutput}>
-                {itemDisplayText.split("\n").map((line, i) => <p key={i} style={line.trim() === "" ? { height: 10 } : { marginBottom: 4 }}>{line}</p>)}
+      <div style={{ position: "relative" }}>
+        {/* Main content — shrinks when panel open */}
+        <div style={{ maxWidth: showItemTaskPanel ? (isMobile ? "100%" : 580) : 640, margin: "0 auto", transition: "max-width .3s ease" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 }}>
+            <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setShowItemTaskPanel(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
+            <button
+              style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12, background: showItemTaskPanel ? C.accent : C.card, color: showItemTaskPanel ? "#fff" : C.ink, border: `1px solid ${showItemTaskPanel ? C.accent : C.border}` }}
+              onClick={() => { setShowItemTaskPanel(!showItemTaskPanel); }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Tasks {noteTaskItems.filter(a => !a.checked).length > 0 && `(${noteTaskItems.filter(a => !a.checked).length})`}
+            </button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <h2 style={{ fontSize: 17, fontWeight: 600, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewingItem.title}</h2>
+            <button style={s.actionBtn} onClick={() => startRename("note", viewingItem.id, viewingItem.title)}>
+              {Icons.pen(13)} <span>Rename</span>
+            </button>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            {viewingItem.image && (
+              <div style={{ marginBottom: 16 }}>
+                <img src={viewingItem.image} alt="Original" style={{ maxWidth: "100%", maxHeight: 280, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.border}` }} />
               </div>
             )}
+            <div style={s.resultCard}>
+              <div style={s.resultHeader}>
+                <h2 style={{ fontSize: 15, fontWeight: 600 }}>Transcription</h2>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {itemIsEditing ? (
+                    <>
+                      <button style={{ ...s.actionBtn, ...s.actionBtnActive }} onClick={saveItemEdits}>
+                        {Icons.check(14)} <span>Done</span>
+                      </button>
+                      <button style={s.actionBtn} onClick={cancelItemEdit}>
+                        {Icons.x(14)} <span>Cancel</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button style={s.actionBtn} onClick={startItemEdit}>
+                        {Icons.pen(14)} <span>Edit</span>
+                      </button>
+                      <button ref={itemCopyBtnRef} style={s.actionBtn} onClick={handleItemCopy}>
+                        {Icons.copy(14)} <span>Copy</span>
+                      </button>
+                      <button style={s.actionBtn} onClick={() => { if (navigator.share) navigator.share({ text: itemDisplayText }); }}>
+                        {Icons.share(14)} <span>Share</span>
+                      </button>
+                      <button
+                        style={{ ...s.actionBtn, ...(plan !== "pro" ? { color: C.gold, borderColor: `${C.gold}40` } : {}) }}
+                        onClick={() => {
+                          const text = itemIsEditing && itemTextareaRef.current ? itemTextareaRef.current.value : itemDisplayText;
+                          exportToDrive(viewingItem.title, text);
+                        }}
+                      >
+                        {Icons.drive(14)} <span>{exportingId ? "Exporting…" : "Drive"}</span>
+                        {plan !== "pro" && <span style={{ fontSize: 9, fontWeight: 700, color: C.gold }}>PRO</span>}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <textarea
+                ref={itemTextareaRef}
+                style={{ ...s.textarea, display: itemIsEditing ? "block" : "none" }}
+                defaultValue=""
+                spellCheck
+              />
+              {!itemIsEditing && (
+                <div style={s.textOutput}>
+                  {itemDisplayText.split("\n").map((line, i) => <p key={i} style={line.trim() === "" ? { height: 10 } : { marginBottom: 4 }}>{line}</p>)}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* ── Inline Tasks Panel ── */}
+        {/* ── Right Sidebar Tasks Panel ── */}
         {showItemTaskPanel && (
-          <div style={{ marginTop: 16, background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, animation: "fadeUp .25s ease", overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{
+            position: "fixed",
+            top: 56,
+            right: 0,
+            bottom: 0,
+            width: isMobile ? "100%" : 300,
+            background: C.card,
+            borderLeft: `1px solid ${C.border}`,
+            display: "flex",
+            flexDirection: "column",
+            zIndex: 200,
+            animation: "slideIn .25s ease",
+            boxShadow: "-4px 0 24px rgba(0,0,0,.06)",
+          }}>
+            {/* Panel header */}
+            <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>Tasks</p>
-              <button style={{ ...s.btnSmall, fontSize: 11 }} onClick={() => extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title)}>
-                {extractingActions ? "Extracting…" : "Re-extract"}
-              </button>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button style={{ ...s.btnSmall, fontSize: 11 }} onClick={() => extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title)}>
+                  {extractingActions ? "Extracting…" : "Re-extract"}
+                </button>
+                <button style={s.iconBtn} onClick={() => setShowItemTaskPanel(false)}>{Icons.x(15)}</button>
+              </div>
             </div>
+
+            {/* Pending preview */}
             {(extractingActions || pendingActions.length > 0) && (
-              <div style={{ padding: "10px 16px", background: C.accentSoft, borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ padding: "10px 16px", background: C.accentSoft, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
                 {extractingActions ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ display: "flex", gap: 4 }}>{[0,1,2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: C.accent, animation: "dotBounce .6s ease-in-out infinite", animationDelay: (i*.15)+"s" }} />)}</div>
@@ -1853,26 +1879,32 @@ export default function JotscriberApp() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
                       {pendingActions.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.ink, display: "flex", gap: 6 }}><span style={{ color: C.accent }}>•</span><span>{a.text}</span></div>)}
                     </div>
-                    <textarea placeholder="Add context and re-run (optional)…" defaultValue="" id="action-note-inline" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 40, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }} />
+                    <textarea placeholder="Add context and re-run (optional)…" defaultValue="" id="action-note-item-sidebar" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 40, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }} />
                     <div style={{ display: "flex", gap: 6 }}>
                       <button style={{ ...s.btnSmall, flex: 1, background: C.accent, fontSize: 11 }} onClick={confirmPendingActions}>Add to list</button>
-                      <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => { const ctx = document.getElementById("action-note-inline")?.value || ""; extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title, ctx); }}>Re-run</button>
+                      <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => { const ctx = document.getElementById("action-note-item-sidebar")?.value || ""; extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title, ctx); }}>Re-run</button>
                       <button style={{ ...s.btnSmall, fontSize: 11, background: C.muted, color: "#fff", border: "none" }} onClick={dismissPendingActions}>Dismiss</button>
                     </div>
                   </>
                 )}
               </div>
             )}
-            {actionItems.filter(a => a.noteId === viewingItem.id).length === 0 && !extractingActions && pendingActions.length === 0 ? (
-              <div style={{ padding: "20px 16px", textAlign: "center" }}>
-                <p style={{ fontSize: 13, color: C.muted }}>No tasks yet. Hit Re-extract or add one below.</p>
-              </div>
-            ) : (
-              <div>{actionItems.filter(a => a.noteId === viewingItem.id).map(a => <ActionItemRow key={a.id} item={a} />)}</div>
-            )}
-            <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 6 }}>
+
+            {/* Task list */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
+              {noteTaskItems.length === 0 && !extractingActions && pendingActions.length === 0 ? (
+                <div style={{ padding: "24px 16px", textAlign: "center" }}>
+                  <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>No tasks yet. Hit Re-extract or add one below.</p>
+                </div>
+              ) : (
+                <div>{noteTaskItems.map(a => <ActionItemRow key={a.id} item={a} />)}</div>
+              )}
+            </div>
+
+            {/* Manual add */}
+            <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0, display: "flex", gap: 6 }}>
               <input
-                placeholder="Add a task manually…"
+                placeholder="Add a task…"
                 value={newTaskText}
                 onChange={e => setNewTaskText(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") addManualTask(viewingItem.id, viewingItem.title); }}
