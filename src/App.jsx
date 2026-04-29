@@ -563,7 +563,18 @@ export default function JotscriberApp() {
       if (data.error) throw new Error(data.error.message);
       const raw = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "[]";
       let items = [];
-      try { items = JSON.parse(raw.trim()); } catch { items = []; }
+      try {
+        // Try direct parse first
+        const cleaned = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+        items = JSON.parse(cleaned);
+        if (!Array.isArray(items)) items = [];
+      } catch {
+        // Fallback: extract array from anywhere in the response
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) {
+          try { items = JSON.parse(match[0]); if (!Array.isArray(items)) items = []; } catch { items = []; }
+        }
+      }
       if (items.length === 0) {
         // Auto-run: stay silent. Manual run: close panel quietly.
         if (!isAutoRun) setShowActionPanel(false);
