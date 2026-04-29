@@ -211,6 +211,9 @@ export default function JotscriberApp() {
   const [extractingActions, setExtractingActions] = useState(false);
   const [pendingActions, setPendingActions] = useState([]);
   const [actionNote, setActionNote] = useState("");
+  const [newTaskText, setNewTaskText] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editingTaskText, setEditingTaskText] = useState("");
 
   // ─── Views ───
   const [view, setView] = useState("home");
@@ -542,11 +545,11 @@ export default function JotscriberApp() {
   };
 
   // ─── Action item extraction ───
-  const extractActionItems = async (noteId, noteText, noteTitle, extraNote = "") => {
+  const extractActionItems = async (noteId, noteText, noteTitle, extraNote = "", isAutoRun = false) => {
     setExtractingActions(true);
     setPendingActions([]);
     try {
-      const prompt = `You are a helpful assistant. Extract all action items, tasks, to-dos, and follow-ups from the following transcribed handwritten note. Return ONLY a JSON array of strings, one per action item. If there are no action items, return an empty array []. Do not include any other text, explanation, or markdown — just the raw JSON array.${extraNote ? `\n\nAdditional context from the user: ${extraNote}` : ""}\n\nNote:\n${noteText}`;
+      const prompt = `You are a helpful assistant that extracts actionable tasks from notes. Given the following transcribed handwritten note, extract all action items — things the person needs to do, tasks, to-dos, reminders, errands, or follow-ups.\n\nIf the note is already a list of tasks (numbered or bulleted), treat each item as an action item.\nIf the note is prose or meeting notes, pull out only the things that require action.\nReturn ONLY a JSON array of strings, one per action item. Each string should be a clean, concise task description.\nIf there are no actionable items, return an empty array [].\nDo not include any other text, explanation, or markdown — just the raw JSON array.${extraNote ? `\n\nAdditional context from the user: ${extraNote}` : ""}\n\nNote:\n${noteText}`;
       const response = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -562,13 +565,16 @@ export default function JotscriberApp() {
       let items = [];
       try { items = JSON.parse(raw.trim()); } catch { items = []; }
       if (items.length === 0) {
-        alert("No action items found in this note.");
+        // Auto-run: stay silent. Manual run: close panel quietly.
+        if (!isAutoRun) setShowActionPanel(false);
         setExtractingActions(false);
         return;
       }
+      // If auto-run and items found, open the panel
+      if (isAutoRun) setShowActionPanel(true);
       setPendingActions(items.map(text => ({ id: uid(), text, noteId, noteTitle, checked: false, createdAt: now() })));
     } catch (err) {
-      alert("Failed to extract action items: " + err.message);
+      if (!isAutoRun) alert("Failed to extract action items: " + err.message);
     }
     setExtractingActions(false);
   };
@@ -590,6 +596,24 @@ export default function JotscriberApp() {
 
   const deleteActionItem = (id) => {
     setActionItems(prev => prev.filter(a => a.id !== id));
+  };
+
+  const addManualTask = (noteId, noteTitle) => {
+    if (!newTaskText.trim()) return;
+    setActionItems(prev => [{ id: uid(), text: newTaskText.trim(), noteId, noteTitle, checked: false, createdAt: now() }, ...prev]);
+    setNewTaskText("");
+  };
+
+  const startEditTask = (item) => {
+    setEditingTaskId(item.id);
+    setEditingTaskText(item.text);
+  };
+
+  const saveEditTask = () => {
+    if (!editingTaskText.trim()) return;
+    setActionItems(prev => prev.map(a => a.id === editingTaskId ? { ...a, text: editingTaskText.trim() } : a));
+    setEditingTaskId(null);
+    setEditingTaskText("");
   };
 
   const startRename = (type, id, currentTitle) => {
@@ -781,11 +805,10 @@ export default function JotscriberApp() {
     setSavedItems(prev => [item, ...prev]);
     resetTranscription();
     setView("library");
-    // Auto-extract action items in the background
+    // Auto-extract action items in the background — only opens panel if items found
     if (user) {
-      setShowActionPanel(true);
       setActionPanelNoteId(item.id);
-      extractActionItems(item.id, transcribedText, item.title);
+      extractActionItems(item.id, transcribedText, item.title, "", true);
     }
   };
 
@@ -1263,15 +1286,34 @@ export default function JotscriberApp() {
 
   /* ══════════════════════ ACTION ITEM ROW ══════════════════════ */
   const ActionItemRow = ({ item }) => (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 16px", borderBottom: `1px solid ${C.border}` }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 16px", borderBottom: `1px solid ${C.border}` }}>
       <button
         onClick={() => toggleActionItem(item.id)}
         style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${item.checked ? C.green : C.border}`, background: item.checked ? C.green : "transparent", flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 2 }}
       >
         {item.checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
       </button>
-      <p style={{ fontSize: 13, color: item.checked ? C.muted : C.ink, flex: 1, lineHeight: 1.5, textDecoration: item.checked ? "line-through" : "none" }}>{item.text}</p>
-      <button onClick={() => deleteActionItem(item.id)} style={{ ...s.iconBtn, color: C.muted, opacity: 0.5, flexShrink: 0 }}>{Icons.trash(12)}</button>
+      {editingTaskId === item.id ? (
+        <div style={{ flex: 1, display: "flex", gap: 4 }}>
+          <input
+            autoFocus
+            value={editingTaskText}
+            onChange={e => setEditingTaskText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") saveEditTask(); if (e.key === "Escape") { setEditingTaskId(null); } }}
+            style={{ flex: 1, fontSize: 13, padding: "2px 6px", borderRadius: 5, border: `1px solid ${C.accent}`, fontFamily: "'Inter', sans-serif", color: C.ink, outline: "none" }}
+          />
+          <button onClick={saveEditTask} style={{ ...s.iconBtn, color: C.green }}>{Icons.check(12)}</button>
+          <button onClick={() => setEditingTaskId(null)} style={s.iconBtn}>{Icons.x(12)}</button>
+        </div>
+      ) : (
+        <>
+          <p style={{ fontSize: 13, color: item.checked ? C.muted : C.ink, flex: 1, lineHeight: 1.5, textDecoration: item.checked ? "line-through" : "none", cursor: "text" }} onDoubleClick={() => startEditTask(item)}>{item.text}</p>
+          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+            <button onClick={() => startEditTask(item)} style={{ ...s.iconBtn, opacity: 0.4 }}>{Icons.pen(11)}</button>
+            <button onClick={() => deleteActionItem(item.id)} style={{ ...s.iconBtn, color: C.muted, opacity: 0.4 }}>{Icons.trash(11)}</button>
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -1666,11 +1708,18 @@ export default function JotscriberApp() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 }}>
           <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
           <button
-            style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}
-            onClick={() => { setView("library"); setShowActionPanel(true); setActionPanelNoteId(viewingItem.id); }}
+            style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12, background: showActionPanel && actionPanelNoteId === viewingItem.id ? C.accent : C.card, color: showActionPanel && actionPanelNoteId === viewingItem.id ? "#fff" : C.ink, border: `1px solid ${showActionPanel && actionPanelNoteId === viewingItem.id ? C.accent : C.border}` }}
+            onClick={() => {
+              if (showActionPanel && actionPanelNoteId === viewingItem.id) {
+                setShowActionPanel(false);
+              } else {
+                setShowActionPanel(true);
+                setActionPanelNoteId(viewingItem.id);
+              }
+            }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            Tasks
+            Tasks {actionItems.filter(a => a.noteId === viewingItem.id && !a.checked).length > 0 && `(${actionItems.filter(a => a.noteId === viewingItem.id && !a.checked).length})`}
           </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -1737,6 +1786,61 @@ export default function JotscriberApp() {
             )}
           </div>
         </div>
+
+        {/* ── Inline Tasks Panel ── */}
+        {showActionPanel && actionPanelNoteId === viewingItem.id && (
+          <div style={{ marginTop: 16, background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, animation: "fadeUp .25s ease", overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>Tasks</p>
+              <button style={{ ...s.btnSmall, fontSize: 11 }} onClick={() => extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title)}>
+                {extractingActions ? "Extracting…" : "Re-extract"}
+              </button>
+            </div>
+            {(extractingActions || pendingActions.length > 0) && (
+              <div style={{ padding: "10px 16px", background: C.accentSoft, borderBottom: `1px solid ${C.border}` }}>
+                {extractingActions ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 4 }}>{[0,1,2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: C.accent, animation: "dotBounce .6s ease-in-out infinite", animationDelay: (i*.15)+"s" }} />)}</div>
+                    <p style={{ fontSize: 12, color: C.accent, fontWeight: 500 }}>Extracting…</p>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: C.accent, marginBottom: 6 }}>{pendingActions.length} item{pendingActions.length !== 1 ? "s" : ""} found</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                      {pendingActions.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.ink, display: "flex", gap: 6 }}><span style={{ color: C.accent }}>•</span><span>{a.text}</span></div>)}
+                    </div>
+                    <textarea placeholder="Add context and re-run (optional)…" value={actionNote} onChange={e => setActionNote(e.target.value)} style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 40, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }} />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button style={{ ...s.btnSmall, flex: 1, background: C.accent, fontSize: 11 }} onClick={confirmPendingActions}>Add to list</button>
+                      {actionNote.trim() && <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title, actionNote)}>Re-run</button>}
+                      <button style={{ ...s.btnSmall, fontSize: 11, color: C.muted }} onClick={dismissPendingActions}>Dismiss</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {actionItems.filter(a => a.noteId === viewingItem.id).length === 0 && !extractingActions && pendingActions.length === 0 ? (
+              <div style={{ padding: "20px 16px", textAlign: "center" }}>
+                <p style={{ fontSize: 13, color: C.muted }}>No tasks yet. Hit Re-extract or add one below.</p>
+              </div>
+            ) : (
+              <div>{actionItems.filter(a => a.noteId === viewingItem.id).map(a => <ActionItemRow key={a.id} item={a} />)}</div>
+            )}
+            <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 6 }}>
+              <input
+                placeholder="Add a task manually…"
+                value={newTaskText}
+                onChange={e => setNewTaskText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") addManualTask(viewingItem.id, viewingItem.title); }}
+                style={{ flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontFamily: "'Inter', sans-serif", color: C.ink, outline: "none" }}
+              />
+              <button
+                style={{ ...s.btnSmall, background: newTaskText.trim() ? C.accent : C.border, color: newTaskText.trim() ? "#fff" : C.muted, fontSize: 12 }}
+                onClick={() => addManualTask(viewingItem.id, viewingItem.title)}
+              >Add</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
