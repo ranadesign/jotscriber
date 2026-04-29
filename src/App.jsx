@@ -127,6 +127,7 @@ const GLOBAL_CSS = `
   @keyframes dotBounce { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
   @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
   @keyframes scanMove { 0% { top: 0; } 100% { top: 100%; } }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px; }
@@ -203,6 +204,14 @@ export default function JotscriberApp() {
   const [renameTarget, setRenameTarget] = useState(null); // {type: "note"|"outline", id, currentTitle}
   const [renameValue, setRenameValue] = useState("");
 
+  // ─── Action Items ───
+  const [actionItems, setActionItems] = useState(() => loadStored("actionItems", []));
+  const [showActionPanel, setShowActionPanel] = useState(false);
+  const [actionPanelNoteId, setActionPanelNoteId] = useState(null); // null = global view
+  const [extractingActions, setExtractingActions] = useState(false);
+  const [pendingActions, setPendingActions] = useState([]);
+  const [actionNote, setActionNote] = useState("");
+
   // ─── Views ───
   const [view, setView] = useState("home");
   const [activeFolder, setActiveFolder] = useState("unsorted");
@@ -277,6 +286,10 @@ export default function JotscriberApp() {
     saveStored("outlines", outlines);
     if (user && cloudLoaded && outlines.length > 0) saveToCloud(user.id, "outlines", outlines);
   }, [outlines, user, cloudLoaded]);
+  useEffect(() => {
+    saveStored("actionItems", actionItems);
+    if (user && cloudLoaded) saveToCloud(user.id, "actionItems", actionItems);
+  }, [actionItems, user, cloudLoaded]);
 
   // ─── Firebase Google sign in ───
   const [authLoading, setAuthLoading] = useState(true);
@@ -298,16 +311,19 @@ export default function JotscriberApp() {
         const cloudFolders = await loadFromCloud(firebaseUser.uid, "folders");
         const cloudOutlines = await loadFromCloud(firebaseUser.uid, "outlines");
         const cloudUsage = await loadFromCloud(firebaseUser.uid, "usage");
+        const cloudActionItems = await loadFromCloud(firebaseUser.uid, "actionItems");
 
         const items = cloudItems || loadStored("items", []);
         const foldersData = cloudFolders || loadStored("folders", [{ id: "unsorted", name: "All Files", system: true }]);
         const outlinesData = cloudOutlines || loadStored("outlines", []);
         const usageData = cloudUsage || loadStored("usage", { month: monthKey(), count: 0 });
+        const actionItemsData = cloudActionItems || loadStored("actionItems", []);
 
         setSavedItems(items);
         setFolders(foldersData);
         setOutlines(outlinesData);
         setUsageThisMonth(usageData.month === monthKey() ? usageData.count : 0);
+        setActionItems(actionItemsData);
         setCloudLoaded(true);
       } else {
         setUser(null);
@@ -525,6 +541,57 @@ export default function JotscriberApp() {
     if (viewingOutline?.id === outlineId) { setViewingOutline(null); setView("library"); }
   };
 
+  // ─── Action item extraction ───
+  const extractActionItems = async (noteId, noteText, noteTitle, extraNote = "") => {
+    setExtractingActions(true);
+    setPendingActions([]);
+    try {
+      const prompt = `You are a helpful assistant. Extract all action items, tasks, to-dos, and follow-ups from the following transcribed handwritten note. Return ONLY a JSON array of strings, one per action item. If there are no action items, return an empty array []. Do not include any other text, explanation, or markdown — just the raw JSON array.${extraNote ? `\n\nAdditional context from the user: ${extraNote}` : ""}\n\nNote:\n${noteText}`;
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+      const raw = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "[]";
+      let items = [];
+      try { items = JSON.parse(raw.trim()); } catch { items = []; }
+      if (items.length === 0) {
+        alert("No action items found in this note.");
+        setExtractingActions(false);
+        return;
+      }
+      setPendingActions(items.map(text => ({ id: uid(), text, noteId, noteTitle, checked: false, createdAt: now() })));
+    } catch (err) {
+      alert("Failed to extract action items: " + err.message);
+    }
+    setExtractingActions(false);
+  };
+
+  const confirmPendingActions = () => {
+    setActionItems(prev => [...pendingActions, ...prev]);
+    setPendingActions([]);
+    setActionNote("");
+  };
+
+  const dismissPendingActions = () => {
+    setPendingActions([]);
+    setActionNote("");
+  };
+
+  const toggleActionItem = (id) => {
+    setActionItems(prev => prev.map(a => a.id === id ? { ...a, checked: !a.checked } : a));
+  };
+
+  const deleteActionItem = (id) => {
+    setActionItems(prev => prev.filter(a => a.id !== id));
+  };
+
   const startRename = (type, id, currentTitle) => {
     setRenameTarget({ type, id });
     setRenameValue(currentTitle);
@@ -714,6 +781,12 @@ export default function JotscriberApp() {
     setSavedItems(prev => [item, ...prev]);
     resetTranscription();
     setView("library");
+    // Auto-extract action items in the background
+    if (user) {
+      setShowActionPanel(true);
+      setActionPanelNoteId(item.id);
+      extractActionItems(item.id, transcribedText, item.title);
+    }
   };
 
   // ─── Folders ───
@@ -1188,13 +1261,47 @@ export default function JotscriberApp() {
 
   /* TranscribePage merged into HomePage */
 
+  /* ══════════════════════ ACTION ITEM ROW ══════════════════════ */
+  const ActionItemRow = ({ item }) => (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 16px", borderBottom: `1px solid ${C.border}` }}>
+      <button
+        onClick={() => toggleActionItem(item.id)}
+        style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${item.checked ? C.green : C.border}`, background: item.checked ? C.green : "transparent", flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 2 }}
+      >
+        {item.checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+      </button>
+      <p style={{ fontSize: 13, color: item.checked ? C.muted : C.ink, flex: 1, lineHeight: 1.5, textDecoration: item.checked ? "line-through" : "none" }}>{item.text}</p>
+      <button onClick={() => deleteActionItem(item.id)} style={{ ...s.iconBtn, color: C.muted, opacity: 0.5, flexShrink: 0 }}>{Icons.trash(12)}</button>
+    </div>
+  );
+
   /* ══════════════════════ PAGE: LIBRARY ══════════════════════ */
-  const LibraryPage = () => (
-    <div style={{ animation: "fadeUp .4s ease", maxWidth: 640, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 600 }}>Library</h2>
-        <button style={s.btnSmall} onClick={startNewTranscription}>+ New</button>
-      </div>
+  const LibraryPage = () => {
+    const panelNoteItems = actionPanelNoteId
+      ? actionItems.filter(a => a.noteId === actionPanelNoteId)
+      : actionItems;
+    const panelNote = actionPanelNoteId ? savedItems.find(i => i.id === actionPanelNoteId) : null;
+    const uncheckedCount = actionItems.filter(a => !a.checked).length;
+
+    return (
+    <div style={{ position: "relative" }}>
+      <div style={{ animation: "fadeUp .4s ease", maxWidth: showActionPanel ? (isMobile ? "100%" : 580) : 640, margin: "0 auto", transition: "max-width .3s ease" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 600 }}>Library</h2>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              style={{ ...s.btnSmall, background: showActionPanel ? C.accent : C.card, color: showActionPanel ? "#fff" : C.ink, border: `1px solid ${showActionPanel ? C.accent : C.border}`, display: "flex", alignItems: "center", gap: 6, position: "relative" }}
+              onClick={() => { setShowActionPanel(!showActionPanel); setActionPanelNoteId(null); }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Tasks
+              {uncheckedCount > 0 && !showActionPanel && (
+                <span style={{ position: "absolute", top: -5, right: -5, background: C.accent, color: "#fff", fontSize: 9, fontWeight: 700, width: 16, height: 16, borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center" }}>{uncheckedCount}</span>
+              )}
+            </button>
+            <button style={s.btnSmall} onClick={startNewTranscription}>+ New</button>
+          </div>
+        </div>
 
       {/* Folder tabs — drop targets */}
       <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
@@ -1360,7 +1467,138 @@ export default function JotscriberApp() {
         );
       })()}
     </div>
-  );
+
+    {/* ── Action Items Side Panel ── */}
+    {showActionPanel && (
+      <div style={{
+        position: isMobile ? "fixed" : "fixed",
+        top: isMobile ? 0 : 56,
+        right: 0,
+        bottom: 0,
+        width: isMobile ? "100%" : 320,
+        background: C.card,
+        borderLeft: `1px solid ${C.border}`,
+        display: "flex",
+        flexDirection: "column",
+        zIndex: 200,
+        animation: "slideIn .25s ease",
+        boxShadow: "-4px 0 24px rgba(0,0,0,.06)",
+      }}>
+        {/* Panel header */}
+        <div style={{ padding: "16px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>
+              {actionPanelNoteId && panelNote ? "Tasks — " + panelNote.title.slice(0, 28) + (panelNote.title.length > 28 ? "…" : "") : "All Tasks"}
+            </p>
+            <p style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>
+              {actionPanelNoteId ? <button style={{ fontSize: 11, color: C.accent, border: "none", background: "transparent", cursor: "pointer", padding: 0 }} onClick={() => setActionPanelNoteId(null)}>← View all tasks</button> : `${actionItems.filter(a => !a.checked).length} remaining`}
+            </p>
+          </div>
+          <button style={{ ...s.iconBtn }} onClick={() => setShowActionPanel(false)}>
+            {Icons.x(16)}
+          </button>
+        </div>
+
+        {/* Pending extracted items */}
+        {(extractingActions || pendingActions.length > 0) && (
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: C.accentSoft, flexShrink: 0 }}>
+            {extractingActions ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[0,1,2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: C.accent, animation: "dotBounce .6s ease-in-out infinite", animationDelay: (i*.15)+"s" }} />)}
+                </div>
+                <p style={{ fontSize: 12, color: C.accent, fontWeight: 500 }}>Extracting action items…</p>
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: 12, fontWeight: 600, color: C.accent, marginBottom: 8 }}>Found {pendingActions.length} action item{pendingActions.length !== 1 ? "s" : ""}</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                  {pendingActions.map((a, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: C.ink }}>
+                      <span style={{ color: C.accent, marginTop: 1 }}>•</span>
+                      <span style={{ lineHeight: 1.5 }}>{a.text}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Extra note input for re-run */}
+                <textarea
+                  placeholder="Add context and re-run (optional)…"
+                  value={actionNote}
+                  onChange={e => setActionNote(e.target.value)}
+                  style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 48, marginBottom: 8, fontFamily: "'Inter', sans-serif", color: C.ink }}
+                />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button style={{ ...s.btnSmall, flex: 1, background: C.accent, fontSize: 11 }} onClick={confirmPendingActions}>Add to list</button>
+                  {actionNote.trim() && (
+                    <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => {
+                      const note = savedItems.find(i => i.id === pendingActions[0]?.noteId);
+                      if (note) extractActionItems(note.id, note.text, note.title, actionNote);
+                    }}>Re-run</button>
+                  )}
+                  <button style={{ ...s.btnSmall, fontSize: 11, color: C.muted }} onClick={dismissPendingActions}>Dismiss</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Action items list */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+          {panelNoteItems.length === 0 && !extractingActions && pendingActions.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center" }}>
+              <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>
+                {actionPanelNoteId ? "No action items extracted from this note yet." : "No tasks yet. Save a note to extract action items automatically."}
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {/* Group by note in global view */}
+              {!actionPanelNoteId ? (
+                (() => {
+                  const grouped = {};
+                  panelNoteItems.forEach(a => {
+                    if (!grouped[a.noteId]) grouped[a.noteId] = { noteTitle: a.noteTitle, items: [] };
+                    grouped[a.noteId].items.push(a);
+                  });
+                  return Object.entries(grouped).map(([noteId, group]) => (
+                    <div key={noteId}>
+                      <div style={{ padding: "10px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <p style={{ fontSize: 11, fontWeight: 600, color: C.muted, letterSpacing: ".04em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{group.noteTitle}</p>
+                        <button style={{ fontSize: 10, color: C.accent, border: "none", background: "transparent", cursor: "pointer" }} onClick={() => setActionPanelNoteId(noteId)}>filter</button>
+                      </div>
+                      {group.items.map(a => <ActionItemRow key={a.id} item={a} />)}
+                    </div>
+                  ));
+                })()
+              ) : (
+                panelNoteItems.map(a => <ActionItemRow key={a.id} item={a} />)
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Re-run for current note */}
+        {actionPanelNoteId && panelNote && pendingActions.length === 0 && !extractingActions && (
+          <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+            <textarea
+              placeholder="Add context and re-run extraction…"
+              value={actionNote}
+              onChange={e => setActionNote(e.target.value)}
+              style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 48, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }}
+            />
+            <button
+              style={{ ...s.btnSmall, width: "100%", justifyContent: "center", fontSize: 12 }}
+              onClick={() => extractActionItems(panelNote.id, panelNote.text, panelNote.title, actionNote)}
+            >
+              Re-run extraction
+            </button>
+          </div>
+        )}
+      </div>
+    )}
+    </div>
+    );
+  };
 
   /* ══════════════════════ PAGE: VIEW ITEM ══════════════════════ */
   const [itemIsEditing, setItemIsEditing] = useState(false);
@@ -1425,8 +1663,17 @@ export default function JotscriberApp() {
 
     return (
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
-        <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 }}>
+          <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
+          <button
+            style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}
+            onClick={() => { setView("library"); setShowActionPanel(true); setActionPanelNoteId(viewingItem.id); }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Tasks
+          </button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
           <h2 style={{ fontSize: 17, fontWeight: 600, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewingItem.title}</h2>
           <button style={s.actionBtn} onClick={() => startRename("note", viewingItem.id, viewingItem.title)}>
             {Icons.pen(13)} <span>Rename</span>
