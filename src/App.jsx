@@ -207,6 +207,7 @@ export default function JotscriberApp() {
   // ─── Action Items ───
   const [actionItems, setActionItems] = useState(() => loadStored("actionItems", []));
   const [showActionPanel, setShowActionPanel] = useState(false);
+  const [showItemTaskPanel, setShowItemTaskPanel] = useState(false);
   const [actionPanelNoteId, setActionPanelNoteId] = useState(null); // null = global view
   const [extractingActions, setExtractingActions] = useState(false);
   const [pendingActions, setPendingActions] = useState([]);
@@ -1629,6 +1630,40 @@ export default function JotscriberApp() {
           )}
         </div>
 
+        {/* Manual add task */}
+        <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0, display: "flex", gap: 6 }}>
+          <input
+            id="side-panel-new-task"
+            placeholder="Add a task…"
+            defaultValue=""
+            onKeyDown={e => {
+              if (e.key === "Enter") {
+                const val = e.target.value.trim();
+                if (!val) return;
+                const noteId = actionPanelNoteId || "manual";
+                const noteTitle = panelNote?.title || "Manual";
+                addManualTask(noteId, noteTitle);
+                // Since uncontrolled, clear manually
+                const input = document.getElementById("side-panel-new-task");
+                if (input) { setNewTaskText(val); input.value = ""; }
+              }
+            }}
+            style={{ flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontFamily: "'Inter', sans-serif", color: C.ink, outline: "none" }}
+          />
+          <button
+            style={{ ...s.btnSmall, background: C.accent, color: "#fff", border: "none", fontSize: 12 }}
+            onClick={() => {
+              const input = document.getElementById("side-panel-new-task");
+              const val = input?.value.trim();
+              if (!val) return;
+              const noteId = actionPanelNoteId || "manual";
+              const noteTitle = panelNote?.title || "Manual";
+              setActionItems(prev => [{ id: uid(), text: val, noteId, noteTitle, checked: false, createdAt: now() }, ...prev]);
+              input.value = "";
+            }}
+          >Add</button>
+        </div>
+
         {/* Re-run for current note */}
         {actionPanelNoteId && panelNote && pendingActions.length === 0 && !extractingActions && (
           <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -1719,16 +1754,12 @@ export default function JotscriberApp() {
     return (
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 }}>
-          <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
+          <button style={s.btnGhost} onClick={() => { setItemIsEditing(false); setShowItemTaskPanel(false); setView("library"); }}>{Icons.back(16)} <span>Back to Library</span></button>
           <button
-            style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12, background: showActionPanel && actionPanelNoteId === viewingItem.id ? C.accent : C.card, color: showActionPanel && actionPanelNoteId === viewingItem.id ? "#fff" : C.ink, border: `1px solid ${showActionPanel && actionPanelNoteId === viewingItem.id ? C.accent : C.border}` }}
+            style={{ ...s.btnSmall, display: "flex", alignItems: "center", gap: 5, fontSize: 12, background: showItemTaskPanel ? C.accent : C.card, color: showItemTaskPanel ? "#fff" : C.ink, border: `1px solid ${showItemTaskPanel ? C.accent : C.border}` }}
             onClick={() => {
-              if (showActionPanel && actionPanelNoteId === viewingItem.id) {
-                setShowActionPanel(false);
-              } else {
-                setShowActionPanel(true);
-                setActionPanelNoteId(viewingItem.id);
-              }
+              setShowItemTaskPanel(!showItemTaskPanel);
+              setActionPanelNoteId(viewingItem.id);
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
@@ -1801,7 +1832,7 @@ export default function JotscriberApp() {
         </div>
 
         {/* ── Inline Tasks Panel ── */}
-        {showActionPanel && actionPanelNoteId === viewingItem.id && (
+        {showItemTaskPanel && (
           <div style={{ marginTop: 16, background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, animation: "fadeUp .25s ease", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>Tasks</p>
