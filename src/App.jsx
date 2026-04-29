@@ -1576,19 +1576,18 @@ export default function JotscriberApp() {
                 {/* Extra note input for re-run */}
                 <textarea
                   placeholder="Add context and re-run (optional)…"
-                  value={actionNote}
-                  onChange={e => setActionNote(e.target.value)}
+                  defaultValue=""
+                  id="action-note-library"
                   style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 48, marginBottom: 8, fontFamily: "'Inter', sans-serif", color: C.ink }}
                 />
                 <div style={{ display: "flex", gap: 6 }}>
                   <button style={{ ...s.btnSmall, flex: 1, background: C.accent, fontSize: 11 }} onClick={confirmPendingActions}>Add to list</button>
-                  {actionNote.trim() && (
-                    <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => {
-                      const note = savedItems.find(i => i.id === pendingActions[0]?.noteId);
-                      if (note) extractActionItems(note.id, note.text, note.title, actionNote);
-                    }}>Re-run</button>
-                  )}
-                  <button style={{ ...s.btnSmall, fontSize: 11, color: C.muted }} onClick={dismissPendingActions}>Dismiss</button>
+                  <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => {
+                    const ctx = document.getElementById("action-note-library")?.value || "";
+                    const note = savedItems.find(i => i.id === pendingActions[0]?.noteId);
+                    if (note) extractActionItems(note.id, note.text, note.title, ctx);
+                  }}>Re-run</button>
+                  <button style={{ ...s.btnSmall, fontSize: 11, background: C.muted, color: "#fff", border: "none" }} onClick={dismissPendingActions}>Dismiss</button>
                 </div>
               </>
             )}
@@ -1635,13 +1634,16 @@ export default function JotscriberApp() {
           <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
             <textarea
               placeholder="Add context and re-run extraction…"
-              value={actionNote}
-              onChange={e => setActionNote(e.target.value)}
+              defaultValue=""
+              id="action-note-rerun"
               style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 48, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }}
             />
             <button
               style={{ ...s.btnSmall, width: "100%", justifyContent: "center", fontSize: 12 }}
-              onClick={() => extractActionItems(panelNote.id, panelNote.text, panelNote.title, actionNote)}
+              onClick={() => {
+                const ctx = document.getElementById("action-note-rerun")?.value || "";
+                extractActionItems(panelNote.id, panelNote.text, panelNote.title, ctx);
+              }}
             >
               Re-run extraction
             </button>
@@ -1711,7 +1713,7 @@ export default function JotscriberApp() {
     }
   };
 
-  const renderItemPage = () => {
+  const ItemPage = () => {
     if (!viewingItem) return null;
 
     return (
@@ -1820,11 +1822,11 @@ export default function JotscriberApp() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
                       {pendingActions.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.ink, display: "flex", gap: 6 }}><span style={{ color: C.accent }}>•</span><span>{a.text}</span></div>)}
                     </div>
-                    <textarea placeholder="Add context and re-run (optional)…" value={actionNote} onChange={e => setActionNote(e.target.value)} style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 40, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }} />
+                    <textarea placeholder="Add context and re-run (optional)…" defaultValue="" id="action-note-inline" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, resize: "none", minHeight: 40, marginBottom: 6, fontFamily: "'Inter', sans-serif", color: C.ink }} />
                     <div style={{ display: "flex", gap: 6 }}>
                       <button style={{ ...s.btnSmall, flex: 1, background: C.accent, fontSize: 11 }} onClick={confirmPendingActions}>Add to list</button>
-                      {actionNote.trim() && <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title, actionNote)}>Re-run</button>}
-                      <button style={{ ...s.btnSmall, fontSize: 11, color: C.muted }} onClick={dismissPendingActions}>Dismiss</button>
+                      <button style={{ ...s.btnSmall, flex: 1, fontSize: 11 }} onClick={() => { const ctx = document.getElementById("action-note-inline")?.value || ""; extractActionItems(viewingItem.id, itemDisplayText, viewingItem.title, ctx); }}>Re-run</button>
+                      <button style={{ ...s.btnSmall, fontSize: 11, background: C.muted, color: "#fff", border: "none" }} onClick={dismissPendingActions}>Dismiss</button>
                     </div>
                   </>
                 )}
@@ -2417,7 +2419,7 @@ export default function JotscriberApp() {
         {view === "home" && <HomePage />}
         {view === "batch" && renderBatchPage()}
         {view === "library" && <LibraryPage />}
-        {view === "item" && renderItemPage()}
+        {view === "item" && <ItemPage />}
         {view === "outline" && renderOutlinePage()}
         {view === "pricing" && <PricingPage />}
         {view === "settings" && <SettingsPage />}
